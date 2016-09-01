@@ -32,7 +32,7 @@ public class DefaultRecoveryScheduler {
     private final RecoveryRequirementProvider offerReqProvider;
     private final FailureMonitor failureMonitor;
     private final LaunchConstrainer launchConstrainer;
-    private final AtomicReference<RecoveryStatus> repairStatusRef;
+    private final AtomicReference<RecoveryStatus> recoveryStatusRef;
 
     public DefaultRecoveryScheduler(
             StateStore stateStore,
@@ -41,14 +41,27 @@ public class DefaultRecoveryScheduler {
             OfferAccepter offerAccepter,
             LaunchConstrainer launchConstrainer,
             FailureMonitor failureMonitor,
-            AtomicReference<RecoveryStatus> repairStatusRef) {
+            AtomicReference<RecoveryStatus> recoveryStatusRef) {
         this.stateStore = stateStore;
         this.offerReqProvider = offerReqProvider;
         this.offerAccepter = offerAccepter;
         this.failureMonitor = failureMonitor;
         this.launchConstrainer = launchConstrainer;
-        this.repairStatusRef = repairStatusRef;
+        this.recoveryStatusRef = recoveryStatusRef;
         this.failureListener = failureListener;
+    }
+
+    /**
+     * True if this scheduler has operations to perform.
+     *
+     * @param block block whose tasks to exclude from consideration.
+     * @return true if this scheduler has operations to perform.
+     */
+    public boolean hasOperations(Optional<Block> block) {
+        updateRecoveryStatus(getTerminatedTasks(block));
+
+        return recoveryStatusRef.get().getStopped().size() > 0 ||
+                recoveryStatusRef.get().getFailed().size() > 0;
     }
 
     /**
@@ -68,10 +81,10 @@ public class DefaultRecoveryScheduler {
     public synchronized List<OfferID> resourceOffers(SchedulerDriver driver, List<Offer> offers, Optional<Block> block)
             throws Exception {
         List<OfferID> acceptedOffers = new ArrayList<>();
-        updateRecoveryPools(getTerminatedTasks(block));
+        updateRecoveryStatus(getTerminatedTasks(block));
 
-        List<TaskInfo> stopped = repairStatusRef.get().getStopped();
-        List<TaskInfo> failed = repairStatusRef.get().getFailed();
+        List<TaskInfo> stopped = recoveryStatusRef.get().getStopped();
+        List<TaskInfo> failed = recoveryStatusRef.get().getFailed();
 
         List<RecoveryRequirement> recoveryCandidates = offerReqProvider.getTransientRecoveryRequirements(stopped);
         recoveryCandidates.addAll(offerReqProvider.getPermanentRecoveryRequirements(failed));
@@ -102,10 +115,17 @@ public class DefaultRecoveryScheduler {
             }
         }
 
-        updateRecoveryPools(getTerminatedTasks(block));
+        updateRecoveryStatus(getTerminatedTasks(block));
         return acceptedOffers;
     }
 
+    /**
+     * Returns all terminated tasks, excluding those corresponding to {@code block}.  This allows for mutual exclusion
+     * with another scheduler.
+     *
+     * @param block Block with tasks to exclude, empty if no tasks should be excluded
+     * @return Terminated tasks, excluding those corresponding to {@code block}
+     */
     private Collection<TaskInfo> getTerminatedTasks(Optional<Block> block) {
         List<TaskInfo> filteredTerminatedTasks = new ArrayList<TaskInfo>();
 
@@ -127,11 +147,13 @@ public class DefaultRecoveryScheduler {
         return filteredTerminatedTasks;
     }
 
-    private void updateRecoveryPools(Collection<TaskInfo> terminatedTasks) {
+    private void updateRecoveryStatus(Collection<TaskInfo> terminatedTasks) {
         List<TaskInfo> failed = new ArrayList<>(terminatedTasks.stream()
                 .filter(failureMonitor::hasFailed)
                 .collect(Collectors.toList()));
         failed = failed.stream().distinct().collect(Collectors.toList());
+
+        // Why? They're already stored as failed.
         failed.stream().forEach(it -> failureListener.taskFailed(it.getTaskId()));
 
         List<TaskInfo> stopped = terminatedTasks.stream()
@@ -145,6 +167,6 @@ public class DefaultRecoveryScheduler {
             }
         }
 
-        repairStatusRef.set(new RecoveryStatus(stopped, failed));
+        recoveryStatusRef.set(new RecoveryStatus(stopped, failed));
     }
 }
