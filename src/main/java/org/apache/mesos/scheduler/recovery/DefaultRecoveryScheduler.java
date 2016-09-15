@@ -32,7 +32,7 @@ public class DefaultRecoveryScheduler {
     private final RecoveryRequirementProvider offerReqProvider;
     private final FailureMonitor failureMonitor;
     private final LaunchConstrainer launchConstrainer;
-    private final AtomicReference<RecoveryStatus> recoveryStatusRef;
+    private final AtomicReference<RecoveryStatus> repairStatusRef;
 
     public DefaultRecoveryScheduler(
             StateStore stateStore,
@@ -41,13 +41,13 @@ public class DefaultRecoveryScheduler {
             OfferAccepter offerAccepter,
             LaunchConstrainer launchConstrainer,
             FailureMonitor failureMonitor,
-            AtomicReference<RecoveryStatus> recoveryStatusRef) {
+            AtomicReference<RecoveryStatus> repairStatusRef) {
         this.stateStore = stateStore;
         this.offerReqProvider = offerReqProvider;
         this.offerAccepter = offerAccepter;
         this.failureMonitor = failureMonitor;
         this.launchConstrainer = launchConstrainer;
-        this.recoveryStatusRef = recoveryStatusRef;
+        this.repairStatusRef = repairStatusRef;
         this.failureListener = failureListener;
     }
 
@@ -58,10 +58,10 @@ public class DefaultRecoveryScheduler {
      * @return true if this scheduler has operations to perform.
      */
     public boolean hasOperations(Optional<Block> block) {
-        updateRecoveryStatus(getTerminatedTasks(block));
+        updateRecoveryPools(getTerminatedTasks(block));
 
-        return recoveryStatusRef.get().getStopped().size() > 0 ||
-                recoveryStatusRef.get().getFailed().size() > 0;
+        return repairStatusRef.get().getStopped().size() > 0 ||
+                repairStatusRef.get().getFailed().size() > 0;
     }
 
     /**
@@ -81,10 +81,10 @@ public class DefaultRecoveryScheduler {
     public synchronized List<OfferID> resourceOffers(SchedulerDriver driver, List<Offer> offers, Optional<Block> block)
             throws Exception {
         List<OfferID> acceptedOffers = new ArrayList<>();
-        updateRecoveryStatus(getTerminatedTasks(block));
+        updateRecoveryPools(getTerminatedTasks(block));
 
-        List<TaskInfo> stopped = recoveryStatusRef.get().getStopped();
-        List<TaskInfo> failed = recoveryStatusRef.get().getFailed();
+        List<TaskInfo> stopped = repairStatusRef.get().getStopped();
+        List<TaskInfo> failed = repairStatusRef.get().getFailed();
 
         List<RecoveryRequirement> recoveryCandidates = offerReqProvider.getTransientRecoveryRequirements(stopped);
         recoveryCandidates.addAll(offerReqProvider.getPermanentRecoveryRequirements(failed));
@@ -115,7 +115,7 @@ public class DefaultRecoveryScheduler {
             }
         }
 
-        updateRecoveryStatus(getTerminatedTasks(block));
+        updateRecoveryPools(getTerminatedTasks(block));
         return acceptedOffers;
     }
 
@@ -147,12 +147,11 @@ public class DefaultRecoveryScheduler {
         return filteredTerminatedTasks;
     }
 
-    private void updateRecoveryStatus(Collection<TaskInfo> terminatedTasks) {
+    private void updateRecoveryPools(Collection<TaskInfo> terminatedTasks) {
         List<TaskInfo> failed = new ArrayList<>(terminatedTasks.stream()
                 .filter(failureMonitor::hasFailed)
                 .collect(Collectors.toList()));
         failed = failed.stream().distinct().collect(Collectors.toList());
-
         failed.stream().forEach(it -> failureListener.taskFailed(it.getTaskId()));
 
         List<TaskInfo> stopped = terminatedTasks.stream()
@@ -166,6 +165,6 @@ public class DefaultRecoveryScheduler {
             }
         }
 
-        recoveryStatusRef.set(new RecoveryStatus(stopped, failed));
+        repairStatusRef.set(new RecoveryStatus(stopped, failed));
     }
 }

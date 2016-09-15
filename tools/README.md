@@ -320,28 +320,27 @@ Returns zero on success, or non-zero otherwise.
 Shakedown tests:
 
 ```
-CLUSTER_URL=http://your-dcos-cluster.com ./run_tests.py shakedown /path/to/your/shakedown/tests/
-```
-
-Shakedown tests, with preceding installation of library requirements:
-
-```
-CLUSTER_URL=http://your-dcos-cluster.com ./run_tests.py shakedown /path/to/your/shakedown/tests/ /path/to/shakedown/requirements.txt
+TEST_TYPES="sanity or recovery" \
+CLUSTER_URL=http://your-dcos-cluster.com \
+  ./run_tests.py shakedown /path/to/your/shakedown/tests/ /path/to/shakedown/requirements.txt
 ```
 
 dcos-tests (Mesosphere-internal, deprecated in favor of Shakedown):
 
 ```
-CLUSTER_URL=http://your-dcos-cluster.com ./run_tests.py dcos-tests /path/to/dcos-tests/test/path /path/to/dcos-tests/ "selected types (eg 'sanity or recovery')"
+TEST_TYPES="recovery" \
+CLUSTER_URL=http://your-dcos-cluster.com \
+  ./run_tests.py dcos-tests /path/to/dcos-tests/test/path /path/to/root/dcos-tests/
 ```
 
 #### Environment variables
 
 - `CLUSTER_URL` (REQUIRED): The URL of a DC/OS cluster to be tested against
-- `STUB_UNIVERSE_URL`: The URL of a stub universe package, if any, to be added to the cluster's repository list.
-- `TEST_GITHUB_LABEL`: Custom label to use when reporting status to Github. This value will be prepended with `test:`.
+- `TEST_TYPES` (default `sanity`): The test types to run (passed to `py.test -m`)
+- `STUB_UNIVERSE_URL`: URL of a stub universe package to be added to the cluster's repository list, if any.
+- `TEST_GITHUB_LABEL` (default `shakedown`/`dcos-tests` as relevant): Custom label to use when reporting status to Github. This value will be prepended with `test:`.
 
-This utility calls `dcos_login.py` and `github_update.py`, so the environment variables used by those tools are inherited. For example, the `DCOS_TOKEN` environment variable may be assigned to authenticate against a DC/OS Open cluster which had already been logged into (at which point the default token used by `dcos_login.py` is no longer valid).
+This utility calls `dcos_login.py` and `github_update.py`, so the environment variables used by those tools are inherited. For example, the `CLUSTER_AUTH_TOKEN` environment variable may be assigned to authenticate against a DC/OS Open cluster which had already been logged into (at which point the default token used by `dcos_login.py` is no longer valid).
 
 ## Misc Utilities
 
@@ -361,7 +360,8 @@ If the `print` argument is provided, `dcos_login.py` will also print the resulti
 
 #### Environment variables
 
-- `DCOS_TOKEN`: Use the provided auth token for `core.dcos_acs_token`, instead of attempting to fetch a token from the cluster. This is mainly for use by Open DC/OS clusters which are not newly created and have been logged into, at which point the default token used by `dcos_login.py` is no longer valid.
+- `CLUSTER_URL`: Use the provided URL, instead of fetching `core.dcos_url` from a CLI.
+- `CLUSTER_AUTH_TOKEN`: Use the provided auth token for `core.dcos_acs_token`, instead of attempting to fetch a token from the cluster. This is mainly for use by Open DC/OS clusters which are not newly created and have been logged into, at which point the default token used by `dcos_login.py` is no longer valid.
 
 ### github_update.py
 
